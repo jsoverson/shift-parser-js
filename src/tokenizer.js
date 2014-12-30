@@ -261,12 +261,12 @@ export class JsError {
   }
 }
 
-export default
-class Tokenizer {
+export default class Tokenizer {
   constructor(source) {
     this.source = source;
     this.index = 0;
-    this.lineStarts = [0];
+    this.line = 0;
+    this.lineStart = 0;
     this.lookaheadStart = 0;
     this.lookahead = this.advance();
     this.lookaheadEnd = this.index;
@@ -275,16 +275,6 @@ class Tokenizer {
     this.hasLineTerminatorBeforeNext = false;
     this.prevToken = null;
     this.tokenIndex = 0;
-    this.lineStarts = [0];
-  }
-
-  trackBackLineNumber(position) {
-    for (let line = this.lineStarts.length - 1; line >= 0; line--) {
-      if ((position >= this.getLineStart(line))) {
-        return line;
-      }
-    }
-    return 0;
   }
 
   createILLEGAL() {
@@ -319,20 +309,12 @@ class Tokenizer {
 
   createError(message, arg) {
     let msg = message.replace(/{(\d+)}/g, () => arg);
-    let index = this.index;
-    let line = this.trackBackLineNumber(index);
-    return new JsError(index, line + 1, index - this.getLineStart(line) + 1, msg);
+    return new JsError(this.index, this.line + 1, this.index - this.lineStart + 1, msg);
   }
 
-  createErrorWithToken(token, message, arg) {
+  createErrorWithToken(location, message, arg) {
     let msg = message.replace(/{(\d+)}/g, () => arg);
-    let index = token.slice.start;
-    let line = this.trackBackLineNumber(index);
-    return new JsError(index, line + 1, index - this.getLineStart(line) + 1, msg);
-  }
-
-  getLineStart(line) {
-    return this.lineStarts[line];
+    return new JsError(location.offset, location.line + 1, location.column + 1, msg);
   }
 
   static cse2(id, ch1, ch2) {
@@ -627,7 +609,8 @@ class Tokenizer {
             === 0x000A /*"\n" */) {
           this.index++;
         }
-        this.lineStarts.push(this.index);
+        this.lineStart = this.index;
+        this.line++;
         return;
       }
     }
@@ -635,51 +618,53 @@ class Tokenizer {
 
   skipMultiLineComment() {
     this.index += 2;
-    let length = this.source.length;
-    let i = this.index;
-    while (i < length) {
-      let chCode = this.source.charCodeAt(i);
+    const length = this.source.length;
+
+    while (this.index < length) {
+      let chCode = this.source.charCodeAt(this.index);
       if (chCode < 0x80) {
         switch (chCode) {
           case 42:  // "*"
             // Block comment ends with "*/'.
-            if (i + 1 < length && this.source.charAt(i + 1) === "/") {
-              this.index = i + 2;
+            if (this.index + 1 < length && this.source.charAt(this.index + 1) === "/") {
+              this.index = this.index + 2;
               return;
             }
-            i++;
+            this.index++;
             break;
           case 10:  // "\n"
             this.hasLineTerminatorBeforeNext = true;
-            i++;
-            this.lineStarts.push(this.index);
+            this.index++;
+            this.lineStart = this.index;
+            this.line++;
             break;
           case 12: // "\r":
             this.hasLineTerminatorBeforeNext = true;
-            if (i < length - 1 && this.source.charAt(i + 1) === "\n") {
-              i++;
+            if (this.index < length - 1 && this.source.charAt(this.index + 1) === "\n") {
+              this.index++;
             }
-            i++;
-            this.lineStarts.push(this.index);
+            this.index++;
+            this.lineStart = this.index;
+            this.line++;
             break;
           default:
-            i++;
+            this.index++;
         }
       } else if (chCode === 0x2028 || chCode === 0x2029) {
-        i++;
-        this.lineStarts.push(this.index);
+        this.index++;
+        this.lineStart = this.index;
+        this.line++;
       } else {
-        i++;
+        this.index++;
       }
     }
-    this.index = i;
     throw this.createILLEGAL();
   }
 
 
   skipComment() {
     let isLineStart = this.index === 0;
-    let length = this.source.length;
+    const length = this.source.length;
 
     while (this.index < length) {
       let chCode = this.source.charCodeAt(this.index);
@@ -691,7 +676,8 @@ class Tokenizer {
         if (chCode === 13 /* "\r" */ && this.index < length && this.source.charAt(this.index) === "\n") {
           this.index++;
         }
-        this.lineStarts.push(this.index);
+        this.lineStart = this.index;
+        this.line++;
         isLineStart = true;
       } else if (chCode === 47 /* "/" */) {
         if (this.index + 1 >= length) {
@@ -847,6 +833,7 @@ class Tokenizer {
   }
 
   scanIdentifier() {
+    let startLocation = this.getLocation();
     let start = this.index;
 
     // Backslash (U+005C) starts an escaped character.
@@ -854,7 +841,9 @@ class Tokenizer {
 
     // There is no keyword or literal with only one character.
     // Thus, it must be an identifier.
-    let slice = {text: id, start, end: this.index};
+    let slice = this.getSlice(start, startLocation);
+    slice.text = id;
+
     if ((id.length === 1)) {
       return new IdentifierToken(slice);
     }
@@ -879,8 +868,12 @@ class Tokenizer {
     return new IdentifierToken(slice);
   }
 
-  getSlice(start) {
-    return {text: this.source.slice(start, this.index), start: start, end: this.index};
+  getLocation() {
+    return {line: this.line, column: this.index - this.lineStart, offset: this.index};
+  }
+
+  getSlice(start, startLocation) {
+    return {text: this.source.slice(start, this.index), start, startLocation, end: this.index};
   }
 
   scanPunctuatorHelper() {
@@ -991,13 +984,14 @@ class Tokenizer {
 
   // 7.7 Punctuators
   scanPunctuator() {
+    let startLocation = this.getLocation();
     let start = this.index;
     let subType = this.scanPunctuatorHelper();
     this.index += subType.name.length;
-    return new PunctuatorToken(subType, this.getSlice(start));
+    return new PunctuatorToken(subType, this.getSlice(start, startLocation));
   }
 
-  scanHexLiteral(start) {
+  scanHexLiteral(start, startLocation) {
     let i = this.index;
     while (i < this.source.length) {
       let ch = this.source.charAt(i);
@@ -1018,11 +1012,11 @@ class Tokenizer {
 
     this.index = i;
 
-    let slice = this.getSlice(start);
+    let slice = this.getSlice(start, startLocation);
     return new NumericLiteralToken(slice, parseInt(slice.text.substr(2), 16));
   }
 
-  scanOctalLiteral(start) {
+  scanOctalLiteral(start, startLocation) {
     while (this.index < this.source.length) {
       let ch = this.source.charAt(this.index);
       if (!("0" <= ch && ch <= "7")) {
@@ -1036,12 +1030,13 @@ class Tokenizer {
       throw this.createILLEGAL();
     }
 
-    return new NumericLiteralToken(this.getSlice(start), parseInt(this.getSlice(start).text.substr(1), 8), true);
+    return new NumericLiteralToken(this.getSlice(start, startLocation), parseInt(this.getSlice(start, startLocation).text.substr(1), 8), true);
   }
 
   scanNumericLiteral() {
     let ch = this.source.charAt(this.index);
     // assert(ch === "." || "0" <= ch && ch <= "9")
+    let startLocation = this.getLocation();
     let start = this.index;
 
     if (ch === "0") {
@@ -1050,12 +1045,12 @@ class Tokenizer {
         ch = this.source.charAt(this.index);
         if (ch === "x" || ch === "X") {
           this.index++;
-          return this.scanHexLiteral(start);
+          return this.scanHexLiteral(start, startLocation);
         } else if ("0" <= ch && ch <= "9") {
-          return this.scanOctalLiteral(start);
+          return this.scanOctalLiteral(start, startLocation);
         }
       } else {
-        return new NumericLiteralToken(this.getSlice(start));
+        return new NumericLiteralToken(this.getSlice(start, startLocation));
       }
     } else if (ch !== ".") {
       // Must be "1'..'9'
@@ -1063,7 +1058,7 @@ class Tokenizer {
       while ("0" <= ch && ch <= "9") {
         this.index++;
         if (this.index === this.source.length) {
-          return new NumericLiteralToken(this.getSlice(start));
+          return new NumericLiteralToken(this.getSlice(start, startLocation));
         }
         ch = this.source.charAt(this.index);
       }
@@ -1073,7 +1068,7 @@ class Tokenizer {
     if (ch === ".") {
       this.index++;
       if (this.index === this.source.length) {
-        return new NumericLiteralToken(this.getSlice(start));
+        return new NumericLiteralToken(this.getSlice(start, startLocation));
       }
 
       ch = this.source.charAt(this.index);
@@ -1081,7 +1076,7 @@ class Tokenizer {
         e++;
         this.index++;
         if (this.index === this.source.length) {
-          return new NumericLiteralToken(this.getSlice(start));
+          return new NumericLiteralToken(this.getSlice(start, startLocation));
         }
         ch = this.source.charAt(this.index);
       }
@@ -1126,7 +1121,7 @@ class Tokenizer {
       throw this.createILLEGAL();
     }
 
-    return new NumericLiteralToken(this.getSlice(start));
+    return new NumericLiteralToken(this.getSlice(start, startLocation));
   }
 
   // 7.8.4 String Literals
@@ -1136,6 +1131,7 @@ class Tokenizer {
     let quote = this.source.charAt(this.index);
     //  assert((quote === "\"" || quote === """), "String literal must starts with a quote")
 
+    let startLocation = this.getLocation();
     let start = this.index;
     this.index++;
 
@@ -1144,7 +1140,7 @@ class Tokenizer {
       let ch = this.source.charAt(this.index);
       if (ch === quote) {
         this.index++;
-        return new StringLiteralToken(this.getSlice(start), str, octal);
+        return new StringLiteralToken(this.getSlice(start, startLocation), str, octal);
       } else if (ch === "\\") {
         this.index++;
         if (this.index === this.source.length) {
@@ -1226,6 +1222,8 @@ class Tokenizer {
           if (ch === "\r" && this.source.charAt(this.index) === "\n") {
             this.index++;
           }
+          this.lineStart = this.index;
+          this.line++;
         }
       } else if (isLineTerminator(ch.charCodeAt(0))) {
         throw this.createILLEGAL();
@@ -1240,6 +1238,7 @@ class Tokenizer {
 
   scanRegExp() {
 
+    let startLocation = this.getLocation();
     let start = this.index;
     // ch = this.source.charAt(this.index)
 
@@ -1296,17 +1295,18 @@ class Tokenizer {
       str += ch;
     }
     this.lookaheadEnd = this.index;
-    return new RegularExpressionLiteralToken(this.getSlice(start), str);
+    return new RegularExpressionLiteralToken(this.getSlice(start, startLocation), str);
   }
 
   advance() {
+    let startLocation = this.getLocation();
     let start = this.index;
     this.skipComment();
-    this.lastWhitespace = this.getSlice(start);
+    this.lastWhitespace = this.getSlice(start, startLocation);
     this.lookaheadStart =start = this.index;
 
     if (this.index >= this.source.length) {
-      return new EOFToken(this.getSlice(start));
+      return new EOFToken(this.getSlice(start, startLocation));
     }
 
     let charCode = this.source.charCodeAt(this.index);
