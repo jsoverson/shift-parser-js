@@ -59,5 +59,16 @@ describe("Parser", function () {
         new Shift.LiteralNumericExpression(42)
       )
     );
+    expect(expr(parse("(1 + 2) = 3"))).to.be.eql(
+      new Shift.AssignmentExpression(
+        "=",
+        new Shift.BinaryExpression(
+          "+",
+          new Shift.LiteralNumericExpression(1),
+          new Shift.LiteralNumericExpression(2)
+        ),
+        new Shift.LiteralNumericExpression(3)
+      )
+    );
   });
 });

@@ -30,23 +30,46 @@ describe("Parser", function () {
     assertEsprimaEquiv("for (let x in list) process(x);");
     assertEsprimaEquiv("for (var x = y = z in q);");
     assertEsprimaEquiv("for (var a = b = c = (d in e) in z);");
-    expect(stmt(parse("for (var i = function() { return 10 in [] } in list) process(x);"))).to.be.eql(
-      new Shift.ForInStatement(
-        new Shift.VariableDeclaration("var", [
-          new Shift.VariableDeclarator(
-            new Shift.Identifier("i"),
-            new Shift.FunctionExpression(null, [], new Shift.FunctionBody([], [
-              new Shift.ReturnStatement(new Shift.BinaryExpression("in", new Shift.LiteralNumericExpression(10), new Shift.ArrayExpression([])))
-            ]))
-          )
-        ]),
-        new Shift.IdentifierExpression(new Shift.Identifier("list")),
-        new Shift.ExpressionStatement(new Shift.CallExpression(
-          new Shift.IdentifierExpression(new Shift.Identifier("process")),
-          [new Shift.IdentifierExpression(new Shift.Identifier("x"))]
-        ))
-      )
-    );
+    it("for (var i = function() { return 10 in [] } in list) process(x);", function () {
+      expect(stmt(parse("for (var i = function() { return 10 in [] } in list) process(x);"))).to.be.eql(
+        new Shift.ForInStatement(
+          new Shift.VariableDeclaration("var", [
+            new Shift.VariableDeclarator(
+              new Shift.Identifier("i"),
+              new Shift.FunctionExpression(null, [], new Shift.FunctionBody([], [
+                new Shift.ReturnStatement(new Shift.BinaryExpression("in", new Shift.LiteralNumericExpression(10), new Shift.ArrayExpression([])))
+              ]))
+            )
+          ]),
+          new Shift.IdentifierExpression(new Shift.Identifier("list")),
+          new Shift.ExpressionStatement(new Shift.CallExpression(
+            new Shift.IdentifierExpression(new Shift.Identifier("process")),
+            [new Shift.IdentifierExpression(new Shift.Identifier("x"))]
+          ))
+        )
+      );
+    });
+    it("for ((1 + 2) in x);", function () {
+      expect(stmt(parse("for ((1 + 2) in x);"))).to.be.eql(
+        new Shift.ForInStatement(
+          new Shift.BinaryExpression("+",
+            new Shift.LiteralNumericExpression(1),
+            new Shift.LiteralNumericExpression(2)
+          ),
+          new Shift.IdentifierExpression(new Shift.Identifier("x")),
+          new Shift.EmptyStatement()
+        ));
+    });
+    it("for ((++a) in x);", function () {
+      expect(stmt(parse("for ((++a) in x);"))).to.be.eql(
+        new Shift.ForInStatement(
+          new Shift.PrefixExpression("++",
+            new Shift.IdentifierExpression(new Shift.Identifier("a"))
+          ),
+          new Shift.IdentifierExpression(new Shift.Identifier("x")),
+          new Shift.EmptyStatement()
+        ));
+    });
     assertEsprimaEquiv("for(var a in b);");
     assertEsprimaEquiv("for(var a = c in b);");
     assertEsprimaEquiv("for(a in b);");

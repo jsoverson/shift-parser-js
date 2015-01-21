@@ -93,18 +93,12 @@ describe("Parser", function () {
     assertParseFailure("var x = /[a-z]/\\\\ux", "Invalid regular expression");
     assertParseFailure("var x = /[P QR]/\\\\u0067", "Invalid regular expression");
 
-    // assertParseFailure("3 = 4", "Invalid left-hand side in assignment");
-    // assertParseFailure("func() = 4", "Invalid left-hand side in assignment");
-    // assertParseFailure("(1 + 1) = 10", "Invalid left-hand side in assignment");
+    assertParseFailure("1 + 2 = 4", "Invalid left-hand side in assignment");
+    assertParseFailure("(1) + 2 = 4", "Invalid left-hand side in assignment");
+    assertParseFailure("for((1) + 1 in list) process(x);", "Invalid left-hand side in for-in");
+    assertParseFailure("for(++a in list) process(x);", "Invalid left-hand side in for-in");
+    assertParseFailure("for(a++ in list) process(x);", "Invalid left-hand side in for-in");
 
-    // assertParseFailure("1++", "Invalid left-hand side in assignment");
-    // assertParseFailure("1--", "Invalid left-hand side in assignment");
-    // assertParseFailure("++1", "Invalid left-hand side in assignment");
-    // assertParseFailure("--1", "Invalid left-hand side in assignment");
-    assertParseFailure("--(1+1)", "Invalid left-hand side in assignment");
-    assertParseFailure("(1+1)--", "Invalid left-hand side in assignment");
-
-    assertParseFailure("for((1 + 1) in list) process(x);", "Invalid left-hand side in for-in");
     assertParseFailure("[", "Unexpected end of input");
     assertParseFailure("[,", "Unexpected end of input");
     assertParseFailure("1 + {", "Unexpected end of input");

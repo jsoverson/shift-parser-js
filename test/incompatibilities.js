@@ -107,6 +107,16 @@ describe("Parser", function() {
         new Shift.IdentifierExpression(new Shift.Identifier("c"))
       )
     );
-
+    expect(stmt(parse(("for((a+b)in c);")))).to.be.eql(
+      new Shift.ForInStatement(
+        new Shift.BinaryExpression(
+          "+",
+          new Shift.IdentifierExpression(new Shift.Identifier("a")),
+          new Shift.IdentifierExpression(new Shift.Identifier("b"))
+        ),
+        new Shift.IdentifierExpression(new Shift.Identifier("c")),
+        new Shift.EmptyStatement()
+      )
+    );
   });
 });

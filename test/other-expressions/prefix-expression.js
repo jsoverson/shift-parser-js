@@ -14,6 +14,12 @@
  * limitations under the License.
  */
 
+var expect = require("expect.js");
+
+var parse = require("../..").default;
+var Shift = require("shift-ast");
+
+var expr = require("../helpers").expr;
 var assertEsprimaEquiv = require('../assertions').assertEsprimaEquiv;
 
 describe("Parser", function () {
@@ -27,5 +33,35 @@ describe("Parser", function () {
     assertEsprimaEquiv("++a");
     assertEsprimaEquiv("-a");
     assertEsprimaEquiv("--a");
+    expect(expr(parse("+++prefix"))).to.be.eql({
+      type: 'PrefixExpression',
+      operator: '++',
+      operand: {
+        type: 'PrefixExpression',
+        operator: '+',
+        operand: {
+          type: 'IdentifierExpression',
+          identifier: {
+            type: 'Identifier',
+            name: 'prefix'
+          }
+        }
+      }
+    });
+    expect(expr(parse("++++prefix"))).to.be.eql({
+      type: 'PrefixExpression',
+      operator: '++',
+      operand: {
+        type: 'PrefixExpression',
+        operator: '++',
+        operand: {
+          type: 'IdentifierExpression',
+          identifier: {
+            type: 'Identifier',
+            name: 'prefix'
+          }
+        }
+      }
+    })
   });
 });
